@@ -5,13 +5,14 @@ import androidx.lifecycle.viewModelScope
 import com.nidoham.ai.provider.CustomBody
 import com.nidoham.ai.provider.CustomHeader
 import com.nidoham.ai.provider.UniversalAIClient
+import com.nidoham.bondhuaihub.BuildConfig
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import org.json.JSONObject // JSON পার্সিংয়ের জন্য
+import kotlinx.serialization.json.*
 import javax.inject.Inject
 
 @HiltViewModel
@@ -25,51 +26,55 @@ class MainViewModel @Inject constructor(
     fun sendPrompt(prompt: String) {
         if (prompt.isBlank()) return
 
-        _uiState.update { it.copy(isLoading = true, responseText = "", error = null) }
-
-        // --- Gemini API Configuration ---
-        val apiKey = "AIzaSyC4OgaLA_ocXFnLJCpmJ2YkgepVEg47TSU"
+        _uiState.update { it.copy(isLoading = true, thoughtText = "", responseText = "", error = null) }
 
         val headers = listOf(
-            // Gemini-তে সাধারণত হেডারেই এপিআই কি দেওয়া নিরাপদ
-            CustomHeader("x-goog-api-key", apiKey),
+            CustomHeader("x-goog-api-key", BuildConfig.API_KEY),
             CustomHeader("Content-Type", "application/json")
         )
 
-        // Gemini-র বডি স্ট্রাকচার OpenAI থেকে আলাদা
-        // JSON Structure: {"contents": [{"parts":[{"text": "prompt"}]}]}
         val body = listOf(
-            CustomBody.create("contents", "[{\"parts\":[{\"text\":\"$prompt\"}]}]")
+            CustomBody("contents", buildJsonArray {
+                addJsonObject {
+                    putJsonArray("parts") {
+                        addJsonObject { put("text", prompt) }
+                    }
+                }
+            }),
+            CustomBody("generationConfig", buildJsonObject {
+                putJsonObject("thinkingConfig") {
+                    put("thinkingBudget", -1)
+                }
+            })
         )
 
         viewModelScope.launch {
             try {
                 aiClient.execute(
                     baseUrl = "https://generativelanguage.googleapis.com/v1beta",
-                    endpoint = "models/gemini-2.5-flash:streamGenerateContent", // অথবা gemini-1.5-pro
+                    endpoint = "models/gemini-2.5-flash:streamGenerateContent?alt=sse",
                     headers = headers,
-                    body = body
+                    body = body,
+                    forceStream = true
                 ).collect { jsonString ->
+                    val parts = try {
+                        Json.parseToJsonElement(jsonString)
+                            .jsonObject["candidates"]
+                            ?.jsonArray?.getOrNull(0)
+                            ?.jsonObject?.get("content")
+                            ?.jsonObject?.get("parts")
+                            ?.jsonArray
+                    } catch (e: Exception) { null } ?: return@collect
 
-                    // Gemini Stream Parsing Logic
-                    val extractedText = try {
-                        val json = JSONObject(jsonString)
-                        // Gemini Response Path: candidates[0].content.parts[0].text
-                        json.getJSONArray("candidates")
-                            .getJSONObject(0)
-                            .getJSONObject("content")
-                            .getJSONArray("parts")
-                            .getJSONObject(0)
-                            .getString("text")
-                    } catch (e: Exception) {
-                        "" // যদি পার্সিং ফেইল করে (যেমন মেটাডেটা চাঙ্ক হলে)
-                    }
+                    parts.forEach { part ->
+                        val obj = part.jsonObject
+                        val text = obj["text"]?.jsonPrimitive?.contentOrNull ?: return@forEach
+                        val isThought = obj["thought"]?.jsonPrimitive?.booleanOrNull == true
 
-                    _uiState.update { currentState ->
-                        currentState.copy(
-                            isLoading = false,
-                            responseText = currentState.responseText + jsonString
-                        )
+                        _uiState.update { state ->
+                            if (isThought) state.copy(isLoading = false, thoughtText = state.thoughtText + text)
+                            else state.copy(isLoading = false, responseText = state.responseText + text)
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -81,6 +86,7 @@ class MainViewModel @Inject constructor(
 
 data class UiState(
     val isLoading: Boolean = false,
+    val thoughtText: String = "",
     val responseText: String = "",
     val error: String? = null
 )
