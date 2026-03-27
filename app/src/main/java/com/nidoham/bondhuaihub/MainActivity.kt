@@ -4,13 +4,18 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.nidoham.bondhuaihub.presentation.viewmodel.MainViewModel
 import com.nidoham.bondhuaihub.ui.theme.BondhuAIHubTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -22,8 +27,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             BondhuAIHubTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
+                    ChatScreen(
                         modifier = Modifier.padding(innerPadding)
                     )
                 }
@@ -33,17 +37,67 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
+fun ChatScreen(
+    viewModel: MainViewModel = hiltViewModel(),
+    modifier: Modifier = Modifier
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    var inputText by remember { mutableStateOf("") }
 
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    BondhuAIHubTheme {
-        Greeting("Android")
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // --- Response Area ---
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
+            if (uiState.isLoading && uiState.responseText.isEmpty()) {
+                // Loading Indicator
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            } else {
+                // Response Text
+                Text(
+                    text = uiState.responseText.ifEmpty { "AI response will appear here..." },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
+                    color = if (uiState.responseText.isEmpty()) Color.Gray else Color.Unspecified
+                )
+            }
+        }
+
+        // --- Input Area ---
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = inputText,
+                onValueChange = { inputText = it },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Type a prompt...") },
+                shape = RoundedCornerShape(24.dp)
+            )
+
+            Button(
+                onClick = {
+                    if (inputText.isNotBlank()) {
+                        viewModel.sendPrompt(inputText)
+                        inputText = "" // Clear input after sending
+                    }
+                },
+                enabled = !uiState.isLoading
+            ) {
+                Text("Send")
+            }
+        }
     }
 }
