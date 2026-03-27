@@ -5,7 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.nidoham.ai.provider.CustomBody
 import com.nidoham.ai.provider.CustomHeader
 import com.nidoham.ai.provider.UniversalAIClient
-import com.nidoham.bondhuaihub.BuildConfig
+import com.nidoham.bondhuaihub.Config
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,7 +29,7 @@ class MainViewModel @Inject constructor(
         _uiState.update { it.copy(isLoading = true, thoughtText = "", responseText = "", error = null) }
 
         val headers = listOf(
-            CustomHeader("x-goog-api-key", BuildConfig.API_KEY),
+            CustomHeader("x-goog-api-key", Config.API_KEY),
             CustomHeader("Content-Type", "application/json")
         )
 
@@ -50,9 +50,10 @@ class MainViewModel @Inject constructor(
 
         viewModelScope.launch {
             try {
+                val modelName = "gemini-3-flash-preview"
                 aiClient.execute(
                     baseUrl = "https://generativelanguage.googleapis.com/v1beta",
-                    endpoint = "models/gemini-2.5-flash:streamGenerateContent?alt=sse",
+                    endpoint = "models/$modelName:streamGenerateContent?alt=sse",
                     headers = headers,
                     body = body,
                     forceStream = true
